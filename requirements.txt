@@ -4,11 +4,10 @@ pypdf
 faiss-cpu
 sentence-transformers
 chromadb>=0.5.23
-langchain==0.3.0
-langchain-core==0.3.0
-langchain-community==0.3.0
-langchain-text-splitters==0.3.0
-langchain-openai==0.2.0
+langchain==0.2.16
+langchain-community==0.2.16
+langchain-text-splitters==0.2.4
+langchain-openai==0.1.22
 langchain-groq==0.1.5
 langchain-chroma==0.1.2
-langchain-huggingface==0.1.2
+langchain-huggingface==0.0.3
