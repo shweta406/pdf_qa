@@ -1,88 +1,233 @@
-Conversational RAG with PDF Uploads (Streamlit + LangChain + Groq)
-Overview
+# Conversational RAG System with PDF Uploads  
+Streamlit + LangChain + ChromaDB + Groq (LLaMA 3.1)
 
-This project implements a Conversational Retrieval-Augmented Generation (RAG) application that allows users to upload PDF documents and ask questions based on their content. The system maintains session-based chat history and generates context-aware responses using a large language model.
+---
 
-The application integrates LangChain for orchestration, ChromaDB for vector storage, HuggingFace embeddings for semantic search, and Groq (LLaMA 3.1) for inference, all served through a Streamlit interface.
+## 1. Introduction
 
-Features
-Upload and process multiple PDF files
-Context-aware question reformulation using chat history
-Session-based conversational memory
-Semantic document retrieval using embeddings
-Fast response generation using Groq LLM
-Simple web interface using Streamlit
-Tech Stack
-Python
-Streamlit
-LangChain
-ChromaDB
-HuggingFace Embeddings (all-MiniLM-L6-v2)
-Groq API (LLaMA 3.1)
-Project Structure
-.
-├── app.py              # Main Streamlit application
-├── .env                # Environment variables (API keys)
-├── requirements.txt    # Project dependencies
-└── README.md
-Environment Variables
+This project implements a **Conversational Retrieval-Augmented Generation (RAG) system** that enables users to upload PDF documents and interact with them through natural language queries.
 
-Create a .env file in the root directory and add the following:
+Unlike traditional Q&A systems, this application:
+- Maintains session-based conversational memory  
+- Reformulates follow-up queries into context-aware standalone questions  
+- Retrieves relevant document chunks using vector search  
+- Generates concise answers using an LLM  
 
-HF_TOKEN=your_huggingface_token
-GROQ_API_KEY=your_groq_api_key
+The system is designed for interactive document understanding.
 
-You can also configure these values using Streamlit secrets.
+---
 
-Installation
+## 2. Key Features
+
+### Core Functionality
+- Multi-PDF upload and processing  
+- Semantic search using embeddings  
+- Conversational memory with session tracking  
+- Context-aware question reformulation  
+- Retrieval-Augmented Generation pipeline  
+
+### System Capabilities
+- Handles follow-up questions intelligently  
+- Reduces hallucination using retrieved context  
+- Generates concise answers (≤ 3 sentences)  
+- Supports multiple user sessions  
+
+---
+
+## 3. System Architecture
+
+```
+User Input (Query)
+        │
+        ▼
+Chat History + Query
+        │
+        ▼
+History-Aware Question Reformulation
+        │
+        ▼
+Retriever (Chroma Vector DB)
+        │
+        ▼
+Relevant Document Chunks
+        │
+        ▼
+LLM (Groq - LLaMA 3.1)
+        │
+        ▼
+Final Answer
+```
+
+---
+
+## 4. Tech Stack
+
+| Component         | Technology Used |
+|------------------|----------------|
+| Frontend UI      | Streamlit      |
+| LLM              | Groq (LLaMA 3.1-8B-Instant) |
+| Framework        | LangChain      |
+| Vector Database  | ChromaDB       |
+| Embeddings       | HuggingFace (all-MiniLM-L6-v2) |
+| Document Loader  | PyPDFLoader    |
+| Text Splitting   | RecursiveCharacterTextSplitter |
+
+---
+
+## 5. Installation Guide
+
+### Step 1: Clone Repository
+```bash
 git clone <your-repo-url>
 cd <your-repo>
+```
 
+### Step 2: Create Virtual Environment
+```bash
 python -m venv venv
-source venv/bin/activate       # For Windows: venv\Scripts\activate
+source venv/bin/activate       # Windows: venv\Scripts\activate
+```
 
+### Step 3: Install Dependencies
+```bash
 pip install -r requirements.txt
-Running the Application
+```
+
+---
+
+## 6. Environment Configuration
+
+Create a `.env` file:
+
+```bash
+HF_TOKEN=your_huggingface_token
+GROQ_API_KEY=your_groq_api_key
+```
+
+---
+
+## 7. Running the Application
+
+```bash
 streamlit run app.py
-How It Works
-1. Document Processing
+```
 
-Uploaded PDF files are loaded using PyPDFLoader and split into smaller chunks using RecursiveCharacterTextSplitter.
+---
 
-2. Embedding and Storage
+## 8. Detailed Code Explanation
 
-The text chunks are converted into vector embeddings using HuggingFace embeddings and stored in a Chroma vector database.
+### Embedding Initialization
+```python
+embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+```
 
-3. Retrieval
+### PDF Loading
+```python
+loader = PyPDFLoader(temppdf)
+docs = loader.load()
+```
 
-User queries are reformulated into standalone questions using chat history. Relevant document chunks are retrieved from the vector store.
+### Text Splitting
+```python
+text_splitter = RecursiveCharacterTextSplitter(
+    chunk_size=5000,
+    chunk_overlap=200
+)
+```
 
-4. Response Generation
+### Vector Store Creation
+```python
+vectorstore = Chroma.from_documents(
+    documents=splits,
+    embedding=embeddings
+)
+```
 
-The retrieved context and user query are passed to the Groq LLM, which generates concise answers limited to three sentences.
+### Retriever
+```python
+retriever = vectorstore.as_retriever()
+```
 
-5. Chat History
+### History-Aware Retrieval
+```python
+history_aware_retriever = create_history_aware_retriever(
+    llm, retriever, contextualize_q_prompt
+)
+```
 
-Session-based chat history is maintained using ChatMessageHistory and RunnableWithMessageHistory.
+### QA Chain
+```python
+question_answer_chain = create_stuff_documents_chain(llm, qa_prompt)
+```
 
-Example Workflow
-Upload one or more PDF files
-Enter a session ID
-Ask a question related to the document
-Ask follow-up questions that rely on previous context
-Limitations
-Temporary file handling uses a fixed filename (temp.pdf), which can cause conflicts
-Vector database is not persisted across sessions
-Performance may degrade with large PDF files
-Limited error handling for invalid or corrupted files
-Lightweight embedding model may reduce retrieval accuracy
-Suggested Improvements
-Use unique filenames for uploaded files to avoid overwriting
-Persist ChromaDB for reuse across sessions
-Optimize chunk size and overlap strategy
-Add better error handling and validation
-Implement streaming responses for improved UX
-Add authentication for multi-user environments
-Conclusion
+### RAG Pipeline
+```python
+rag_chain = create_retrieval_chain(
+    history_aware_retriever,
+    question_answer_chain
+)
+```
 
-This project demonstrates a functional implementation of a conversational RAG pipeline suitable for learning and prototyping. It is not optimized for production use and requires additional enhancements for scalability, reliability, and performance.
+### Chat History Management
+```python
+st.session_state.store = {}
+```
+
+```python
+ChatMessageHistory()
+```
+
+### Stateful Execution
+```python
+RunnableWithMessageHistory(...)
+```
+
+---
+
+## 9. Example Usage
+
+### Input
+```
+What is the main topic of the document?
+```
+
+### Follow-up
+```
+Explain it in simpler terms
+```
+
+---
+
+## 10. Limitations
+
+- Uses fixed filename (`temp.pdf`) → risk of overwrite  
+- No persistence for vector database  
+- Large chunk size reduces retrieval accuracy  
+- Limited error handling  
+- In-memory session storage  
+
+---
+
+## 11. Improvements
+
+- Use unique temp filenames  
+- Persist ChromaDB  
+- Optimize chunk size (1000–1500 recommended)  
+- Add metadata filtering  
+- Implement streaming responses  
+- Add logging and error handling  
+
+---
+
+## 12. Deployment Options
+
+- Streamlit Cloud  
+- Hugging Face Spaces  
+- AWS / GCP  
+
+---
+
+
+## 14. License
+
+Add your preferred license (e.g., MIT License).
