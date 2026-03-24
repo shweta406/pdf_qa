@@ -2,7 +2,6 @@ import streamlit as st
 from langchain.chains import create_history_aware_retriever, create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_chroma import Chroma
-from chromadb.config import Settings
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -56,24 +55,10 @@ if uploaded_files:
         docs = loader.load()
         documents.extend(docs)
 
-    if not documents:
-        st.error("No pages were loaded from the uploaded PDFs.")
-        st.stop()
-
     # split and create embeddings for all documents
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=5000, chunk_overlap=200)
     splits = text_splitter.split_documents(documents)
-
-    vectorstore = Chroma.from_documents(
-        documents=splits,
-        embedding=embeddings,
-        client_settings=Settings(
-            anonymized_telemetry=False,
-            allow_reset=True,
-            is_persistent=False,
-        ),
-        collection_name=f"session_{session_id}",
-    )
+    vectorstore = Chroma.from_documents(documents=splits, embedding=embeddings)
     retriever = vectorstore.as_retriever()
 
     contextualize_q_system_prompt = (
