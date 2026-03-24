@@ -11,99 +11,98 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader
 import os
-
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Configure tokens from environment or Streamlit secrets
+# API keys
 os.environ["HF_TOKEN"] = os.getenv("HF_TOKEN") or st.secrets.get("HF_TOKEN", "")
 api_key = os.getenv("GROQ_API_KEY") or st.secrets.get("GROQ_API_KEY")
 
+# Embeddings
 embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 
-## set up streamlit
-st.title("conversational rag with pdf uploads and chat history")
-st.write("upload pdf's and chat with content")
+# UI
+st.title("Conversational PDF RAG")
+st.write("Upload PDFs and chat with them")
 
-# ensure Groq key is available
 if not api_key:
-    st.error("GROQ_API_KEY is not set. Add it to your .env or Streamlit secrets.")
+    st.error("GROQ_API_KEY missing")
     st.stop()
 
 llm = ChatGroq(groq_api_key=api_key, model_name="llama-3.1-8b-instant")
 
-##chat interface
-session_id = st.text_input("session_id", value="default_session")
+# Session
+session_id = st.text_input("Session ID", value="default_session")
 
-## statefully manage chat history
 if "store" not in st.session_state:
     st.session_state.store = {}
 
+uploaded_files = st.file_uploader("Upload PDFs", type="pdf", accept_multiple_files=True)
 
-uploaded_files = st.file_uploader("choose a pdf file", type="pdf", accept_multiple_files=True)
-##process uploaded pdf's
+# Chat history function
+def get_session_history(session: str) -> BaseChatMessageHistory:
+    if session not in st.session_state.store:
+        st.session_state.store[session] = ChatMessageHistory()
+    return st.session_state.store[session]
+
+
+# Cache vectorstore (important for performance)
+@st.cache_resource
+def create_vectorstore(splits):
+    return Chroma.from_documents(
+        documents=splits,
+        embedding=embeddings
+    )
+
 
 if uploaded_files:
     documents = []
+
     for uploaded_file in uploaded_files:
-        temppdf = "./temp.pdf"
-        with open(temppdf, "wb") as file:
-            file.write(uploaded_file.getvalue())
+        temppdf = f"./temp_{uploaded_file.name}"   # FIXED overwrite bug
+        with open(temppdf, "wb") as f:
+            f.write(uploaded_file.getvalue())
 
         loader = PyPDFLoader(temppdf)
         docs = loader.load()
         documents.extend(docs)
 
-    # split and create embeddings for all documents
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=5000, chunk_overlap=200)
+    if not documents:
+        st.error("No valid content found in PDFs")
+        st.stop()
+
+    # Split
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=5000,
+        chunk_overlap=200
+    )
     splits = text_splitter.split_documents(documents)
-    vectorstore = Chroma.from_documents(documents=splits, embedding=embeddings)
+
+    # Vector DB
+    vectorstore = create_vectorstore(splits)
     retriever = vectorstore.as_retriever()
 
-    contextualize_q_system_prompt = (
-        "Given a chat history and the latest user question"
-        "which might reference context in the chat history,"
-        "formulate a standalone question which can be understood"
-        "without the chat history. do not answer the question,"
-        "just formulate it if needed and otherwise return it as it is."
+    # Contextual retriever
+    contextualize_q_prompt = ChatPromptTemplate.from_messages([
+        ("system", "Rephrase question based on chat history if needed."),
+        MessagesPlaceholder("chat_history"),
+        ("human", "{input}")
+    ])
+
+    history_aware_retriever = create_history_aware_retriever(
+        llm, retriever, contextualize_q_prompt
     )
 
-    contextualize_q_prompt = ChatPromptTemplate.from_messages(
-        [
-            ("system", contextualize_q_system_prompt),
-            MessagesPlaceholder("chat_history"),
-            ("human", "{input}"),
-        ]
-    )
-
-    history_aware_retriever = create_history_aware_retriever(llm, retriever, contextualize_q_prompt)
-
-    # answer question
-    system_prompt = (
-        "you are an assistant for question-answering tasks."
-        "use the following pieces of retrieved context to answer"
-        "the question. if you don't know the answer, say that you"
-        "don't know. use three sentences maximum and keep the answer concise"
-        "\n\n"
-        "{context}"
-    )
-
-    qa_prompt = ChatPromptTemplate.from_messages(
-        [
-            ("system", system_prompt),
-            MessagesPlaceholder("chat_history"),
-            ("human", "{input}"),
-        ]
-    )
+    # QA prompt
+    qa_prompt = ChatPromptTemplate.from_messages([
+        ("system", "Answer using context. If unsure, say you don't know.\n\n{context}"),
+        MessagesPlaceholder("chat_history"),
+        ("human", "{input}")
+    ])
 
     question_answer_chain = create_stuff_documents_chain(llm, qa_prompt)
     rag_chain = create_retrieval_chain(history_aware_retriever, question_answer_chain)
-
-    def get_session_history(session: str) -> BaseChatMessageHistory:
-        if session_id not in st.session_state.store:
-            st.session_state.store[session_id] = ChatMessageHistory()
-        return st.session_state.store[session_id]
 
     conversational_rag_chain = RunnableWithMessageHistory(
         rag_chain,
@@ -113,15 +112,23 @@ if uploaded_files:
         output_messages_key="answer",
     )
 
-    user_input = st.text_input("your question:")
+    # Input
+    user_input = st.text_input("Ask something:")
+
     if user_input:
         session_history = get_session_history(session_id)
+
         response = conversational_rag_chain.invoke(
             {"input": user_input},
-            config={
-                "configurable": {"session_id": session_id}
-            },
+            config={"configurable": {"session_id": session_id}},
         )
-        st.write(st.session_state.store)
-        st.write("assistant:", response["answer"])
-        st.write("chat history", session_history.messages)
+
+        # Show answer
+        st.write("### Assistant")
+        st.write(response["answer"])
+
+        # Clean chat history (FIXED your issue)
+        st.write("### Chat History")
+        for msg in session_history.messages:
+            role = "User" if msg.type == "human" else "AI"
+            st.write(f"**{role}:** {msg.content}")
