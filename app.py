@@ -47,7 +47,7 @@ def load_embeddings():
 
 @st.cache_resource
 def load_llm(api_key):
-    return ChatGroq(groq_api_key=api_key, model_name="llama-3.1-8b-instant")
+    return ChatGroq(groq_api_key=api_key, model_name="llama-3.3-70b-versatile")
 
 embeddings = load_embeddings()
 llm = load_llm(api_key)
